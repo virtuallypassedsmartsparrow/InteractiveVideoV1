@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<title>IntVid_v13</title>
+<body onload="prepare()">
+<h2>Spring Mass Damper Systems</h2>
+
+<div class = "parent" style="margin: 0 auto; width: 888px;">
+    <canvas id="myCanvas" width = "888" height ="500" ></canvas>
+    <div id = "myButton" class='button play' type="button"></div>
+</div>
+    <div class="mute", ></div>
+
+<style>
+body {
+    text-align : center;
+    background : #36A;
+}
+h2 {
+    color : white;
+}
+canvas {
+    border : 10px white solid;
+    /*cursor : pointer;*/
+}
+a {
+  color : #F93;
+}
+
+.mute {
+    cursor : pointer;
+    display: initial;
+    font-size:20px;
+}
+
+.button.play {
+    display: block;
+    box-sizing: border-box;
+    width: 0; 
+    height: 40px;
+    transition: 100ms all ease; cursor: pointer;
+    border-color: transparent transparent transparent #202020;
+    border-style: solid;
+    border-width: 20px 0 20px 30px;
+}
+
+
+</style>
+
+<script>
+var mouseisdown = true; //later i run simulate_calcs() only when mouseisdown = false. This makes simulation not run initially
+
+var mediaSource = "2DOFSpringMassSystemProof.mp4"
+var playbutton = document.getElementById("myButton");
+var muted = false;
+var canvas = document.getElementById("myCanvas"); // get the canvas from the page
+var ctx = getCanvas();//canvas.getContext("2d");
+var videoContainer; // object to hold video and associated info
+var video = document.createElement("video"); // create a video element
+
+
+
+var dt = 1/60; // in seconds
+var scale = 50 //scale is 50 pixles per meter
+var canvasheight = document.getElementById('myCanvas').height / scale //canvasheight in meters
+var canvaswidth = document.getElementById('myCanvas').width / scale // canvaswidth in meters
+//define inputs and geometry
+var m;
+var k;
+var c;
+var x_1 = 0 
+var a_1;
+var v_1;
+var boxlength = 0.8;
+var Xpos;
+var T;
+var count;
+//timer
+var timer;
+
+
+
+start_sim(); //this just sets initial values.
+
+
+
+
+
+
+
+video.src = mediaSource;
+video.autoPlay = false; // auto play video - doens't work though?
+video.loop = true; // set the video to loop.
+video.muted = muted;
+videoContainer = {  // we will add properties as needed
+     video : video,
+     ready : false,   
+};
+// To handle errors. This is not part of the example at the moment. Just fixing for Edge that did not like the ogv format video
+video.onerror = function(e){
+    document.body.removeChild(canvas);
+    document.body.innerHTML += "<h2>There is a problem loading the video</h2><br>";
+    document.body.innerHTML += "Users of IE9+ , the browser does not support WebM videos used by this demo";
+    document.body.innerHTML += "<br><a href='https://tools.google.com/dlpage/webmmf/'> Download IE9+ WebM support</a> from tools.google.com<br> this includes Edge and Windows 10";
+    
+ }
+video.oncanplay = readyToPlayVideo; // set the event to the play function that 
+
+playbutton.addEventListener("click",playPauseClick);
+document.querySelector(".mute").addEventListener("click",videoMute) //if clickd then mute/ummute
+
+
+        canvas.addEventListener("mousedown", function(event) { //if mousedown then play do below
+        if(utils.pointInRect(event.clientX - ctx.canvas.offsetLeft, event.clientY - ctx.canvas.offsetTop, handle)) { //if in box
+            mouseisdown = true;
+            document.body.addEventListener("mousemove", onMouseMove);
+            document.body.addEventListener("mouseup", onMouseUp);
+            offset.x = event.clientX - ctx.canvas.offsetLeft - handle.x;
+            offset.y = event.clientY - ctx.canvas.offsetTop - handle.y; 
+        }
+    });
+
+function readyToPlayVideo(event){ // this is a referance to the video
+    // the video may not match the canvas size so find a scale to fit
+    videoContainer.scale = Math.min(
+                         canvas.width / this.videoWidth, 
+                         canvas.height / this.videoHeight); 
+    videoContainer.ready = true;
+    // the video can be played so hand it off to the display function
+    requestAnimationFrame(updateCanvas);
+    // add instruction
+    //document.getElementById("playPause").textContent = "Click video to play/pause.";
+    document.querySelector(".mute").textContent = "Mute";
+}
+
+function updateCanvas(){
+    ctx.clearRect(0,0,canvas.width,canvas.height); 
+    // only draw if loaded and ready
+    if(videoContainer !== undefined && videoContainer.ready){ 
+        // find the top left of the video on the canvas
+        video.muted = muted;
+        var scale_vid = videoContainer.scale; //important to make this scale different to other scale.
+        var vidH = videoContainer.video.videoHeight;
+        var vidW = videoContainer.video.videoWidth;
+        var top = canvas.height / 2 - (vidH /2 ) * scale_vid;
+        var left = canvas.width / 2 - (vidW /2 ) * scale_vid;
+        // now just draw the video the correct size
+        ctx.drawImage(videoContainer.video, left, top, vidW * scale_vid, vidH * scale_vid); //this creates the video!!
+
+        if(mouseisdown==true){
+            draw();
+        } else{
+            simulate_calcs();
+        }
+        //if(videoContainer.video.paused){ // if not playing show the paused screen 
+        //    drawPayIcon();
+        //}
+        }
+        requestAnimationFrame(updateCanvas);// request the next frame in 1/60th of a second
+}
+
+function playPauseClick(){//once this function is called: if paused, play, if playing, then pause
+     if(videoContainer !== undefined && videoContainer.ready){
+          if(videoContainer.video.paused){                                 
+                videoContainer.video.play();
+                document.getElementById("myButton").style.cssText = "border-style:double; border-width: 0px 0 0px 30px;";
+          }else{
+                videoContainer.video.pause();
+                document.getElementById("myButton").style.cssText = "display: block; box-sizing: border-box; width: 0; height: 30px; transition: 100ms all ease; cursor: pointer;border-color: transparent transparent transparent #202020;  border-style: solid; border-width: 20px 0 20px 30px;";
+          }
+     }
+}
+
+function videoMute(){
+    muted = !muted;
+  if(muted){
+         document.querySelector(".mute").textContent = "Sound on";
+    }else{
+         document.querySelector(".mute").textContent= "Mute";
+    }
+}
+
+function getCanvas() {
+            var c = document.getElementById("myCanvas");
+            return c.getContext("2d");
+}
+
+function prepare() {
+    //handle is the box. Giving initial positions.
+            handle = {
+            x: canvaswidth * scale / 3 - boxlength * scale /2,
+            y: canvasheight * scale / 2 - boxlength * scale/2,
+            width: boxlength * scale,
+            height: boxlength * scale
+        },
+        offset = {};
+    draw();
+};
+
+function onMouseMove(event) {
+        handle.x = event.clientX - ctx.canvas.offsetLeft - offset.x;
+        handle.y = event.clientY - ctx.canvas.offsetTop - offset.y;
+        draw();
+    }
+function onMouseUp(event) {
+        handle.x = canvaswidth * scale/3 - boxlength * scale/2;
+        document.body.removeEventListener("mousemove", onMouseMove);
+        document.body.removeEventListener("mouseup", onMouseUp);
+        x_1 = handle.y / scale- (canvasheight/2 - boxlength/2);
+        mouseisdown = false;
+        start_sim();
+    }
+
+//draws pause icon on top of video
+/*
+function drawPayIcon(){
+     ctx.fillStyle = "black";  // darken display
+     ctx.globalAlpha = 0.5;
+     ctx.fillRect(0,0,canvas.width,canvas.height);
+     ctx.fillStyle = "#DDD"; // colour of play icon
+     ctx.globalAlpha = 0.75; // partly transparent
+     ctx.beginPath(); // create the path for the icon
+     var size = (canvas.height / 2) * 0.5;  // the size of the icon
+     ctx.moveTo(canvas.width/2 + size/2, canvas.height / 2); // start at the pointy end
+     ctx.lineTo(canvas.width/2 - size/2, canvas.height / 2 + size);
+     ctx.lineTo(canvas.width/2 - size/2, canvas.height / 2 - size);
+     ctx.closePath();
+     ctx.fill();
+     ctx.globalAlpha = 1; // restore alpha
+}    
+*/
+
+function draw() {
+    drawRectangle(canvaswidth/3 - boxlength/2, handle.y / scale,  handle.width / scale, handle.height / scale,"rgba(245,201,63,0.8)");
+    springanddamper(canvaswidth/3, 0, canvaswidth/3, handle.y / scale, 10);
+}
+
+function start_sim(){
+    //set inputs and geometry initial values
+    timer = 0;
+    boxlength = 0.8;
+    //x_1 = 1;
+    a_1 = 0;
+    v_1 = 0;
+    //w = Number(document.getElementById("w").value)
+    m = 40;
+    k = 525;
+    c = 60; //need to include damping so that 1) Can reach steady state and 2) amplitude not infinity. But make small because want to show that at some values of w, X1 = 0
+    Xpos = [];
+    T = [];
+    count = 0;
+}
+
+function simulate_calcs() {
+    timer = timer + dt;
+    ctx.beginPath();
+    ctx.font = '20px Calibri';
+    ctx.fillStyle = 'black';
+    ctx.fillText("Time: " + Math.round(timer*10)/10 + " s", 10, 30);
+    ctx.closePath();
+    ctx.fill();
+    //draw block
+    drawRectangle(canvaswidth/3 - boxlength/2, x_1 + canvasheight/2 - boxlength/2, boxlength,boxlength,"rgba(245,201,63,0.8)");
+    //spring and damper
+    springanddamper(canvaswidth/3, 0, canvaswidth/3, x_1 + canvasheight/2 - boxlength/2, 10);
+    //creating vector of displacements X and time T
+    count = count + 1;
+    Xpos[count] = x_1
+    T[count] = timer *0.5
+    Chart(canvaswidth/3 + boxlength/2, canvasheight/2, T, Xpos)
+    //dynamics
+    a_1 = -(k/m) * x_1 -(c/m) * v_1;
+    v_1 = v_1 + a_1 * dt;
+    x_1 = x_1 + v_1 * dt;
+    handle.y = x_1 * scale + (canvasheight/2 - boxlength/2) * scale;
+}
+function getCanvas() {
+    var c = document.getElementById("myCanvas");
+    return c.getContext("2d");
+} 
+function Chart(originx, originy, Xvec,Yvec) {
+    var x0 = originx * scale;
+    var y0 = originy * scale;
+    var X = Xvec;
+    var Y = Yvec;
+    ctx.strokeStyle = "black";
+    ctx.beginPath();
+    //drawing chart
+    ctx.moveTo(x0+X[0],y0+Y[0]);
+    for (i = 1; i < X.length; i++){
+        ctx.lineTo(x0+X[i]*scale,y0+Y[i]*scale)
+    }
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.closePath();
+}
+function drawRectangle( x, y, width, height, color) {
+    ctx.beginPath();
+    ctx.rect(x * scale, y * scale, width * scale, height * scale);
+    ctx.fillStyle = color;
+    ctx.closePath();
+    ctx.fill();
+    // ctx.stroke();
+}
+function drawRectangleSlant(x1, y1, L, t, theta) {
+    ctx.beginPath();
+    var gr = ctx.createLinearGradient(scale * x1, scale * y1, scale * (x1 + L*Math.cos(theta)), scale * (y1 + L*Math.sin(theta)));
+    gr.addColorStop(0,'rgb(204,204,204)');
+    gr.addColorStop(0.5, 'rgb(191,191,191');
+    gr.addColorStop(1,'rgb(200,200,200)');
+    ctx.fillStyle = gr;
+    ctx.moveTo(scale * x1, scale * y1);
+    ctx.lineTo(scale * (x1 + L * Math.cos(theta)), scale * (y1 + L * Math.sin(theta)));
+    ctx.lineTo(scale * (x1 + L * Math.cos(theta) - t * Math.sin(theta)), scale * (y1 + L * Math.sin(theta) + t * Math.cos(theta)));
+    ctx.lineTo(scale * (x1 - t * Math.sin(theta)), scale * (y1 + t * Math.cos(theta)));
+    ctx.lineTo(scale * x1, scale * y1);
+    ctx.stroke();
+    ctx.fill();
+    ctx.closePath();
+}
+function drawLine(x1,y1,x2,y2) {
+    ctx.beginPath();
+    ctx.moveTo(x1 * scale,y1 * scale);
+    ctx.lineTo(x2 * scale,y2 * scale);
+    ctx.stroke();
+}
+function drawArrowLarge(x,y,x_tip,y_tip) {
+    var theta = Math.atan((y_tip - y) / (x_tip - x));
+    if (x_tip - x < 0) {
+    theta = theta + Math.PI;
+} else { 
+    theta = theta;
+}
+    ctx.beginPath();
+    ctx.moveTo(x * scale, y * scale);
+    ctx.lineTo(x_tip * scale, y_tip * scale);
+    ctx.lineTo(scale*x_tip - scale*0.3 * Math.sin(0.25 * Math.PI - theta), scale*y_tip - scale*0.3 * Math.cos(0.25 * Math.PI - theta));
+    ctx.moveTo(x_tip * scale, y_tip * scale);
+    ctx.lineTo(scale*x_tip - scale*0.3 * Math.cos(0.25 * Math.PI - theta), scale*y_tip + scale*0.3 * Math.sin(0.25 * Math.PI - theta));
+    ctx.stroke();
+    ctx.closePath();
+}
+function drawArrowSmall(x,y,x_tip,y_tip,color) {
+    // var gr = ctx.createLinearGradient(x,y,x_tip,y_tip);
+    // gr.addColorStop(0,color);
+    // gr.addColorStop(1,color);
+    //ctx.strokeStyle = gr
+    ctx.strokeStyle = color;
+    var theta = Math.atan((y_tip - y) / (x_tip - x));
+        if (x_tip - x < 0) {
+        theta = theta + Math.PI;
+    } else { 
+        theta = theta;
+    }
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.moveTo(x * scale, y * scale);
+    ctx.lineTo(x_tip * scale, y_tip * scale);
+    ctx.lineTo(scale*x_tip - scale*0.15 * Math.sin(Math.PI/3 - theta), scale*y_tip - scale*0.15 * Math.cos(Math.PI/3 - theta));
+    ctx.moveTo(x_tip * scale, y_tip * scale);
+    ctx.lineTo(scale*x_tip - scale*0.15 * Math.cos(Math.PI/6 - theta), scale*y_tip + scale*0.15 * Math.sin(Math.PI/6 - theta));
+    ctx.stroke();
+    ctx.closePath();
+}
+function drawBall(x1,y1,r) {
+    ctx.beginPath();
+    ctx.arc(x1 * scale,y1 * scale,r * scale,0,2*Math.PI);
+    ctx.stroke();
+}
+function spring(x_1,y_1,x_2,y_2,n) {
+    var h = 10;
+    var x1 = x_1 * scale;
+    var x2 = x_2 * scale;
+    var y1 = y_1 * scale;
+    var y2 = y_2 * scale;
+    var theta = Math.atan((y1-y2)/(x2-x1));
+    var d = Math.sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1))/(2+4*n);
+    var gamma = Math.atan(h/(2*d));
+    if (x2-x1 < 0) {
+        theta = theta + Math.PI;
+    } else { 
+        theta = theta;
+    }
+    ctx.strokeStyle = "black";
+    ctx.beginPath();
+    //first line of spring
+    ctx.moveTo(x1,y1);
+    ctx.lineTo(x1+d*Math.cos(theta), y1-d*Math.sin(theta))
+    ctx.lineTo(x1+d*Math.cos(theta)+Math.sqrt(d*d+h*h/4)*Math.cos(gamma-theta), y1-d*Math.sin(theta)+Math.sqrt(d*d+h*h/4)*Math.sin(gamma-theta));
+    //last line of spring
+    ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-d*Math.cos(theta), y2+d*Math.sin(theta));
+    ctx.lineTo(x2-d*Math.cos(theta)-Math.sqrt(d*d+h*h/4)*Math.cos(gamma-theta), y2+d*Math.sin(theta)-Math.sqrt(d*d+h*h/4)*Math.sin(gamma-theta));
+    //spring
+    ctx.moveTo(x1+d*Math.cos(theta)+Math.sqrt(d*d+h*h/4)*Math.cos(gamma-theta), y1-d*Math.sin(theta)+Math.sqrt(d*d+h*h/4)*Math.sin(gamma-theta));
+    for (i = 1; i < 2*n; i++) {
+    ctx.lineTo(x1+d*Math.cos(theta)+Math.sqrt(d*d+h*h/4)*Math.cos(gamma-theta)+(0.25+0.5*i-0.25*(Math.pow(-1,i)))*2*Math.sqrt(d*d+h*h/4)*Math.cos(gamma+theta)+(-0.25+0.5*i+0.25*(Math.pow(-1,i)))*2*Math.sqrt(d*d+h*h/4)*Math.cos(gamma-theta), y1-d*Math.sin(theta)+Math.sqrt(d*d+h*h/4)*Math.sin(gamma-theta)-(0.25+0.5*i-0.25*(Math.pow(-1,i)))*2*Math.sqrt(d*d+h*h/4)*Math.sin(gamma+theta)+(-0.25+0.5*i+0.25*(Math.pow(-1,i)))*2*Math.sqrt(d*d+h*h/4)*Math.sin(gamma-theta));
+    }
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.closePath();
+}
+function damper(x_1,y_1,x_2,y_2) {
+    var x1 = x_1 * scale;
+    var x2 = x_2 * scale;
+    var y1 = y_1 * scale;
+    var y2 = y_2 * scale
+    var L = Math.sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1))
+    var theta = Math.atan((y1-y2)/(x2-x1));
+    var gap = 0.15 //percentage
+    var piston = L*0.5*(1-gap) + L*gap*Math.exp(-L/(scale*3)); //length of bit before piston casing + amount piston head goes into casing
+    var casing = L*0.5*(1-gap); //length of bit before casing
+    var h = 8;
+    if (x2-x1 < 0) {
+        theta = theta + Math.PI;
+    } else { 
+        theta = theta;
+    }
+    ctx.beginPath();
+    //piston
+    ctx.moveTo(x1,y1);
+    ctx.lineTo(x1 + piston*Math.cos(theta), y1 - piston*Math.sin(theta))
+    ctx.moveTo(x1 + piston*Math.cos(theta) - 0.7*h*Math.sin(theta), y1 - piston*Math.sin(theta) - 0.7*h*Math.cos(theta))
+    ctx.lineTo(x1 + piston*Math.cos(theta) + 0.7*h*Math.sin(theta), y1 - piston*Math.sin(theta) + 0.7*h*Math.cos(theta))
+    //casing
+    ctx.moveTo(x2,y2);
+    //little bit at end of casing
+    ctx.lineTo(x2 - (casing)*Math.cos(theta), y2 + (casing)*Math.sin(theta));
+    //main casing
+    ctx.lineTo(x2 - (casing)*Math.cos(theta) - h*Math.sin(theta), y2 + (casing)*Math.sin(theta) - h*Math.cos(theta));
+    ctx.lineTo(x2 - (casing)*Math.cos(theta) - h*Math.sin(theta) - gap*L*Math.cos(theta), y2 + (casing)*Math.sin(theta) - h*Math.cos(theta) + gap*L*Math.sin(theta));
+    ctx.moveTo(x2 - (casing)*Math.cos(theta), y2 + (casing)*Math.sin(theta));
+    ctx.lineTo(x2 - (casing)*Math.cos(theta) + h*Math.sin(theta), y2 + (casing)*Math.sin(theta) + h*Math.cos(theta));
+    ctx.lineTo(x2 - (casing)*Math.cos(theta) + h*Math.sin(theta) - gap*L*Math.cos(theta), y2 + (casing)*Math.sin(theta) + h*Math.cos(theta) + gap*L*Math.sin(theta));
+    ctx.linewidth = 1;
+    ctx.stroke();
+    ctx.closePath();
+}
+function springanddamper(x_1,y_1,x_2,y_2,n) {
+    var gap = 10;
+    var h_spring = 10;
+    var h_damper = 8;
+    var theta = Math.atan((y_1-y_2)/(x_2-x_1));
+    spring(x_1 - (gap/2 + h_spring/2)*Math.sin(theta)/scale, y_1 - (gap/2 + h_spring/2)*Math.cos(theta)/scale, x_2 - (gap/2 + h_spring/2)*Math.sin(theta)/scale, y_2 - (gap/2 + h_spring/2)*Math.cos(theta)/scale, n);
+    damper(x_1 + (gap/2 + h_damper/2)*Math.sin(theta)/scale, y_1 + (gap/2 + h_damper/2)*Math.cos(theta)/scale, x_2 + (gap/2 + h_damper/2)*Math.sin(theta)/scale, y_2 + (gap/2 + h_damper/2)*Math.cos(theta)/scale);
+}
+
+    var utils = {
+    norm: function(value, min, max) {
+        return (value - min) / (max - min);
+    },
+    lerp: function(norm, min, max) {
+        return (max - min) * norm + min;
+    },
+    map: function(value, sourceMin, sourceMax, destMin, destMax) {
+        return utils.lerp(utils.norm(value, sourceMin, sourceMax), destMin, destMax);
+    },
+    clamp: function(value, min, max) {
+        return Math.min(Math.max(value, Math.min(min, max)), Math.max(min, max));
+    },
+    distance: function(p0, p1) {
+        var dx = p1.x - p0.x,
+            dy = p1.y - p0.y;
+        return Math.sqrt(dx * dx + dy * dy);
+    },
+    distanceXY: function(x0, y0, x1, y1) {
+        var dx = x1 - x0,
+            dy = y1 - y0;
+        return Math.sqrt(dx * dx + dy * dy);
+    },
+    circleCollision: function(c0, c1) {
+        return utils.distance(c0, c1) <= c0.radius + c1.radius;
+    },
+    circlePointCollision: function(x, y, circle) {
+        return utils.distanceXY(x, y, circle.x, circle.y) < circle.radius;
+    },
+    pointInRect: function(x, y, rect) {
+        return utils.inRange(x, rect.x, rect.x + rect.width) &&
+               utils.inRange(y, rect.y, rect.y + rect.height);
+    },
+    inRange: function(value, min, max) {
+        return value >= Math.min(min, max) && value <= Math.max(min, max);
+    },
+    rangeIntersect: function(min0, max0, min1, max1) {
+        return Math.max(min0, max0) >= Math.min(min1, max1) && 
+               Math.min(min0, max0) <= Math.max(min1, max1);
+    },
+    rectIntersect: function(r0, r1) {
+        return utils.rangeIntersect(r0.x, r0.x + r0.width, r1.x, r1.x + r1.width) &&
+               utils.rangeIntersect(r0.y, r0.y + r0.height, r1.y, r1.y + r1.height);
+    },
+    degreesToRads: function(degrees) {
+        return degrees / 180 * Math.PI;
+    },
+    radsToDegrees: function(radians) {
+        return radians * 180 / Math.PI;
+    },
+    randomRange: function(min, max) {
+        return min + Math.random() * (max - min);
+    },
+    randomInt: function(min, max) {
+        return Math.floor(min + Math.random() * (max - min + 1));
+    },
+    roundToPlaces: function(value, places) {
+        var mult = Math.pow(10, places);
+        return Math.round(value * mult) / mult;
+    },
+    roundNearest: function(value, nearest) {
+        return Math.round(value / nearest) * nearest;
+    },
+    quadraticBezier: function(p0, p1, p2, t, pFinal) {
+        pFinal = pFinal || {};
+        pFinal.x = Math.pow(1 - t, 2) * p0.x + 
+                   (1 - t) * 2 * t * p1.x + 
+                   t * t * p2.x;
+        pFinal.y = Math.pow(1 - t, 2) * p0.y + 
+                   (1 - t) * 2 * t * p1.y + 
+                   t * t * p2.y;
+        return pFinal;
+    },
+    cubicBezier: function(p0, p1, p2, p3, t, pFinal) {
+        pFinal = pFinal || {};
+        pFinal.x = Math.pow(1 - t, 3) * p0.x + 
+                   Math.pow(1 - t, 2) * 3 * t * p1.x + 
+                   (1 - t) * 3 * t * t * p2.x + 
+                   t * t * t * p3.x;
+        pFinal.y = Math.pow(1 - t, 3) * p0.y + 
+                   Math.pow(1 - t, 2) * 3 * t * p1.y + 
+                   (1 - t) * 3 * t * t * p2.y + 
+                   t * t * t * p3.y;
+        return pFinal;
+    }
+}
+</script>
